@@ -90,7 +90,16 @@ if len(meta.columns) > 2:
 
     #if permute: numeric_x = np.random.permutation(numeric_x)
     counts = counts[confounders.index]
-
+else:
+    # Subset counts to only those in x even without any confounders
+    # edge case for if the counts file has more samples than the groups file
+    original_count_samples = set(counts.columns)
+    if original_count_samples != set(meta['sample']):
+        removed_samples = original_count_samples - set(meta['sample'])
+        print('Samples removed because they are not in the groups file...')
+        print(','.join(list(removed_samples)))
+    counts = counts[meta['sample']]
+    
 
 scale_factor = 1.
 
