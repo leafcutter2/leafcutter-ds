@@ -299,7 +299,7 @@ def differential_splicing_junc(counts, x, confounders = None, min_samples_per_in
 
     sas = bayes_glm.SpikeAndSlabModel(
         gamma_shape = dist.Gamma(2., 1.) if learn_conc_prior else 2., 
-        gamma_rate = dist.Gamma(2., 10.), if learn_conc_prior else 0.2, 
+        gamma_rate = dist.Gamma(2., 10.) if learn_conc_prior else 0.2, 
         beta_scale = dist.HalfCauchy(1.) if learn_beta_scale_prior else 2. 
     )
     losses_null, losses_full, losses = sas.fit(x_null, x_full, y, n, alpha = 0., num_particles = 1, **kwargs)
