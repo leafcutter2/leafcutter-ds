@@ -24,8 +24,8 @@ parser.add_argument("-p", "--num_threads", default=1, type=int, help="Number of 
   
 
 # Parse the command-line arguments
-args = parser.parse_args("-o real muris_leaf_perind_numers.counts.gz group_leaf_random9.txt".split())
-#args = parser.parse_args()
+#args = parser.parse_args("-o real muris_leaf_perind_numers.counts.gz group_leaf_random9.txt".split())
+args = parser.parse_args()
 
 from timeit import default_timer as timer
 import_start = timer()

@@ -142,10 +142,13 @@ class BayesianBetaBinomialModel(pyro.nn.PyroModule):
         return losses, guide
 
 def bin_then_bb_glm(x, y, n, lr = 0.01, iterations = 500, gamma_shape = 2., num_particles = 30, **kwargs):
+
+    print("Initial binomial GLM fitting.")
     binomial_glm = BayesianBetaBinomialModel(gamma_shape = None, **kwargs)
     losses, guide = binomial_glm.fit(x, y, n, lr=lr, iterations=iterations) # fit binomial glm first, seems worth it here
     beta_init = guide.median()['beta']
 
+    print("Beta-binomial GLM fitting.")
     bb_glm = BayesianBetaBinomialModel(gamma_shape = gamma_shape, **kwargs)
     bb_losses, guide = bb_glm.fit(x, y, n, beta_init = beta_init, iterations=iterations, **kwargs) # initialize beta binomial glm from there
     final_elbo = pyro.infer.Trace_ELBO(num_particles = num_particles)(bb_glm, guide)(x, y, n).item()
