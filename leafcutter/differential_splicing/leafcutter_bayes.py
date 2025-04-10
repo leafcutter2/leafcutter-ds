@@ -18,10 +18,9 @@ parser.add_argument("-c", "--min_coverage", default=20, type=int, help="Minimum 
 parser.add_argument("-u", "--min_unique_vals", default=10, type=int, help="Only relevant for continuous x. Require min_unique_vals unique values after filtering for samples with cluster count > min_coverage [default %(default)s]")
 #parser.add_argument("-p", "--num_threads", default=1, type=int, help="Number of threads to use [default %(default)s]")
 parser.add_argument("-e", "--exon_file", default=None, help="File defining known exons, example in data/gencode19_exons.txt.gz. Columns should be chr, start, end, strand, gene_name. Optional, only just to label the clusters.")
-parser.add_argument("--init", default="brr", help="One of One of brr (Bayesian ridge regression), rr (ridge regression), mult (multinomial logistic regression) or `0` (set to 0).")
+parser.add_argument("--init", default="brr", help="One of One of brr (Bayesian ridge regression, default), rr (ridge regression), mult (multinomial logistic regression) or `0` (set to 0).")
 parser.add_argument("--timeit", default=False, type = bool, help="Whether to print out total time spent at different steps of leafcutter-ds. This is mostly for benchmarking or debugging.")
 parser.add_argument("-p", "--num_threads", default=1, type=int, help="Number of threads to use  [default %(default)s]")
-  
 
 # Parse the command-line arguments
 #args = parser.parse_args("-o real muris_leaf_perind_numers.counts.gz group_leaf_random9.txt".split())
@@ -31,18 +30,13 @@ from timeit import default_timer as timer
 import_start = timer()
 import leafcutter
 from leafcutter.differential_splicing.differential_splicing import differential_splicing_junc
-import leafcutter.utils
-import importlib
-importlib.reload( leafcutter.differential_splicing.differential_splicing)
 
 import pandas as pd
 
-import os
-import sys
 import numpy as np
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, scale
 from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
+
 import_end = timer()
 
 # Access the parsed arguments
@@ -107,15 +101,3 @@ setup_end = timer()
 losses_null, losses_full, losses, junc_table = differential_splicing_junc(counts, meta["group"], confounders = confounders, min_samples_per_intron = args.min_samples_per_intron, min_samples_per_group = args.min_samples_per_group, min_coverage = args.min_coverage, device = "cpu", num_cores = args.num_threads, timeit = args.timeit)
 
 junc_table.to_csv(args.output_prefix + "_junction_results.txt", sep = '\t', index = False, na_rep='NA')
-
-import matplotlib.pyplot as plt
-plt.plot(losses_null)
-plt.plot(losses_full)
-plt.plot(losses)
-
-if False: 
-    import matplotlib.pyplot as plt
-    for alpha,v in junc_table.items():
-        plt.hist(v,30)
-        fpr = (v > 0.9).float().mean() # alpha = 0.5 actually does better (0.17) than 0 (0.21), and -0.5 (0.235). Also slightly better using alpha=0.5 for learning. 
-        print(alpha,fpr)
