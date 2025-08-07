@@ -178,16 +178,17 @@ def differential_splicing(counts, x, confounders = None, max_cluster_size=10, mi
     cluster_table = pd.DataFrame(results.values()) 
     cluster_table.index = results.keys()
     cluster_table['p.adjust'] = robust_fdr(cluster_table['p'], method = 'bh')
-    
-    #add failed clusters
-    statuses_cluster_table = status_df[~status_df.index.isin(cluster_table.index)]
-    cluster_table = pd.concat([cluster_table, statuses_cluster_table])
 
+    #add failed clusters
+    cluster_table = cluster_table.merge(status_df, how = 'outer', left_index = True, right_index = True)
+    
     junc_results = [ v[2] for v in pool_results if v[0] == "Success" ]
     junc_table = pd.concat(junc_results, axis=0) # note this should handle missing categories fine
     
-    #for group in x.unique():
-    #    junc_table['deltapsi_' + group] = junc_table['psi_' + group] - junc_table['psi_0']
+    for group in x.unique():
+        # excludes baseline which is 0
+        if 'psi_' + group in junc_table.columns:
+            junc_table['deltapsi_' + group] = junc_table['psi_' + group] - junc_table['psi_0']
     
     time_dict = dict(zip(['cluster_filtering', 'fitting', 'results_processing'], [cluster_time, fitting_time, results_time]))
     

@@ -11,7 +11,6 @@ import pyro
 import pyro.distributions as dist
 from pyro.infer import config_enumerate
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 from sklearn import linear_model
 import numpy as np
 

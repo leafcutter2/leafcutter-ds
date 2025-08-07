@@ -16,7 +16,6 @@ parser.add_argument("-i", "--min_samples_per_intron", default=5, type=int, help=
 parser.add_argument("-g", "--min_samples_per_group", default=3, type=int, help="Only relevant for categorical x. Require this many samples in each group to have at least min_coverage reads [default %(default)s]")
 parser.add_argument("-c", "--min_coverage", default=20, type=int, help="Minimum number of total reads for a cluster to consider it worth testing [default %(default)s]")
 parser.add_argument("-u", "--min_unique_vals", default=10, type=int, help="Only relevant for continuous x. Require min_unique_vals unique values after filtering for samples with cluster count > min_coverage [default %(default)s]")
-#parser.add_argument("-p", "--num_threads", default=1, type=int, help="Number of threads to use [default %(default)s]")
 parser.add_argument("-e", "--exon_file", default=None, help="File defining known exons, example in data/gencode19_exons.txt.gz. Columns should be chr, start, end, strand, gene_name. Optional, only just to label the clusters.")
 parser.add_argument("--init", default="brr", help="One of One of brr (Bayesian ridge regression), rr (ridge regression), mult (multinomial logistic regression) or `0` (set to 0).")
 parser.add_argument("--timeit", default=False, type = bool, help="Whether to print out total time spent at different steps of leafcutter-ds. This is mostly for benchmarking or debugging.")
@@ -173,7 +172,7 @@ logef_cols = list(junc_table.columns[junc_table.columns.str.startswith('logef_')
 psi_cols = list(junc_table.columns[junc_table.columns.str.startswith('psi_')])
 deltapsi_cols = list(junc_table.columns[junc_table.columns.str.startswith('deltapsi_')])
 
-junc_table.loc[:,['cluster', 'intron'] + logef_cols + psi_cols + deltapsi_cols].to_csv(output_prefix + "_effect_sizes.txt", sep = '\t', index = False, na_rep='NA')
+junc_table.loc[:,['intron'] + logef_cols + psi_cols + deltapsi_cols].to_csv(output_prefix + "_effect_sizes.txt", sep = '\t', index = False, na_rep='NA')
 
 wrap_up_end = timer()
 if args.timeit == True:
