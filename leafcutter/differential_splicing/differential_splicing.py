@@ -152,9 +152,14 @@ def differential_splicing(counts, x, confounders = None, max_cluster_size=10, mi
     kwargs: keyword arguments passed to dirichlet_multinomial_anova
     '''
 
-    junc_meta = counts.index.to_series().str.split(':',expand=True).rename(columns = {0:"chr", 1:"start", 2:"end", 3:"cluster"})
+    junc_split = counts.index.to_series().str.split(':',expand=True)
+    # Handle both 4-field (chr:start:end:cluster) and 5-field (chr:start:end:cluster:annotation) formats
+    col_names = {0:"chr", 1:"start", 2:"end", 3:"cluster"}
+    if junc_split.shape[1] == 5:
+        col_names[4] = "annotation"
+    junc_meta = junc_split.rename(columns = col_names)
     cluster_ids = junc_meta.cluster.unique()
-    
+
     torch_types = { "device" : device, "dtype" : torch.float } # would we ever want float64? 
     
     cluster_time = 0
@@ -251,7 +256,12 @@ def differential_splicing_junc(counts, x, confounders = None, min_samples_per_in
     kwargs: keyword arguments passed to dirichlet_multinomial_anova
     '''
 
-    junc_meta = counts.index.to_series().str.split(':',expand=True).rename(columns = {0:"chr", 1:"start", 2:"end", 3:"cluster"})
+    junc_split = counts.index.to_series().str.split(':',expand=True)
+    # Handle both 4-field (chr:start:end:cluster) and 5-field (chr:start:end:cluster:annotation) formats
+    col_names = {0:"chr", 1:"start", 2:"end", 3:"cluster"}
+    if junc_split.shape[1] == 5:
+        col_names[4] = "annotation"
+    junc_meta = junc_split.rename(columns = col_names)
     cluster_ids = junc_meta.cluster.unique()
     normalize = lambda g: g/g.sum()
     
