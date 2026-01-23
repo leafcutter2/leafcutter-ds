@@ -33,7 +33,7 @@ from leafcutter.differential_splicing.differential_splicing import differential_
 import leafcutter.utils
 
 import pandas as pd
-
+from collections import defaultdict
 import os
 import sys
 import numpy as np
@@ -132,7 +132,8 @@ if args.timeit:
 else:
     cluster_table, junc_table, status_df = res
 
-print("Fit Time", timer() - setup_end)
+if args.timeit:
+    print("Fit Time", timer() - setup_end)
 
 wrap_up_start = timer()
 cluster_table['cluster'] = cluster_table.index
@@ -162,11 +163,18 @@ else:
 
 output_prefix = args.output_prefix
 
+cluster_out_cols = ['cluster', 'status', 'loglr', 'df', 'p', 'p.adjust', 'genes']
+# add annotations to cluster dataframe if they exist
+if 'annotation' in intron_meta.columns:
+    cluster_to_annotations = intron_meta.groupby('cluster')['annotation'].agg(lambda x: ','.join(sorted(set(x))))
+    cluster_table['annotations'] = cluster_table['cluster'].map(cluster_to_annotations)
+    cluster_out_cols.append('annotations')
+
 clu_to_chrclu = dict(zip(intron_meta["cluster"], intron_meta["chr"] + ':' + intron_meta["cluster"]))
 cluster_table['cluster'] = cluster_table['cluster'].map(clu_to_chrclu) 
 
 print('Saving results...')
-cluster_table.loc[:,('cluster', 'status', 'loglr', 'df', 'p', 'p.adjust', 'genes')].to_csv(output_prefix + "_cluster_significance.txt", sep = '\t', index = False, na_rep='NA')
+cluster_table.loc[:,cluster_out_cols].to_csv(output_prefix + "_cluster_significance.txt", sep = '\t', index = False, na_rep='NA')
 
 #just rearranging junction columns for backwards compatibility
 rename_juncs = dict(zip(list(junc_table.columns), list(junc_table.columns)))
