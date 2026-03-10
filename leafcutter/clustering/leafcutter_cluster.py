@@ -22,8 +22,18 @@ def pool_junc_reads(flist, options):
     checkchrom = options.checkchrom
     useStrand = options.strand
 
-    outFile = "%s/%s_pooled"%(rundir,outPrefix)
-    
+	# Ensure rundir exists, or create it if its parent exists
+	if not os.path.isdir(rundir):
+		parent = os.path.dirname(rundir)
+		if os.path.isdir(parent):
+			os.makedirs(rundir)
+			sys.stderr.write(f"Created output directory: {rundir}\n")
+		else:
+			sys.exit(f"Error: Cannot create '{rundir}' because parent directory '{parent}' does not exist. "
+					 f"Please check your --rundir path and ensure the parent directory exists.")
+
+	outFile = "%s/%s_pooled" % (rundir, outPrefix)
+
     chromLst = ["chr%d"%x for x in range(1,23)]+['chrX','chrY']+["%d"%x for x in range(1,23)]+['X','Y']
     by_chrom = {}
     for libl in flist:
@@ -443,7 +453,7 @@ if __name__ == "__main__":
                   help="text file with all junction files to be processed")
 
     parser.add_option("-o", "--outprefix", dest="outprefix", default = 'leafcutter',
-                  help="output prefix (default leafcutter)")
+                  help="output prefix (default leafcutter). Please include any directories in -r/--rundir, not output_prefix")
 
     parser.add_option("-q", "--quiet",
                   action="store_false", dest="verbose", default=True,
