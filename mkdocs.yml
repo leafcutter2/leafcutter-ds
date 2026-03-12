@@ -1,0 +1,37 @@
+site_name: leafcutter-ds
+site_description: Python implementation of the leafcutter differential splicing algorithm
+repo_url: https://github.com/leafcutter2/leafcutter-ds
+site_url: https://leafcutter2.github.io/leafcutter-ds/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - toc.integrate
+  palette:
+    - scheme: default
+      primary: teal
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation & FAQ: getting-started.md
+  - Tutorials:
+      - Clustering: tutorials/clustering.md
+      - Differential Splicing: tutorials/differential-splicing.md
+      - Visualization: tutorials/visualization.md
+      - sQTL: tutorials/sQTL.md
+  - Comparison: comparison.md
+  - API Reference:
+      - leafcutter.clustering: api/clustering.md
+      - leafcutter.differential_splicing: api/differential-splicing.md
