@@ -8,7 +8,7 @@ Alternatively, you can clone this repo and install it with pip locally:
  ```
  git clone https://github.com/leafcutter2/leafcutter-ds.git
  cd leafcutter-ds
- git install -e .
+ pip install -e .
  ```
 
 The installation process will install `leafcutter-cluster` and `leafcutter-ds` as command line tools.
