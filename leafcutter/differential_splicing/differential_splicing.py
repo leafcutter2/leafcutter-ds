@@ -34,11 +34,11 @@ def robust_fdr(ps, method = "bh"):
     p_adjust[mask] = false_discovery_control(ps[mask], method = method)
     return p_adjust
     
-def task(inp, x, torch_types, kwargs, confounders = None, max_cluster_size=10, min_samples_per_intron=5, min_samples_per_group=4, min_coverage=0, min_unique_vals = 10): 
+def task(inp, x, torch_types, kwargs, confounders = None, max_cluster_size=10, min_samples_per_intron=5, min_samples_per_group=4, min_coverage=0, min_unique_vals = 10):
 
     normalize = lambda g: g/g.sum()
 
-    clu, cluster_counts, idx = inp
+    clu, cluster_counts, intron_labels = inp
     
     cluster_start_time = timer()
 
@@ -117,7 +117,7 @@ def task(inp, x, torch_types, kwargs, confounders = None, max_cluster_size=10, m
     junc_results = pd.concat(
         [pd.DataFrame({
             'cluster' : [clu] * y.shape[1], 
-            'intron' : idx[idx][introns_to_use].index, 
+            'intron' : intron_labels[introns_to_use],
             'psi_0' : normalize(full_fit.beta[0,:].softmax(0) * full_fit.conc).cpu().numpy()}), 
         logef, 
         perturbed], axis = 1)
@@ -166,15 +166,21 @@ def differential_splicing(counts, x, confounders = None, max_cluster_size=10, mi
     fitting_time = 0
     results_time = 0
 
-    idx = [ clu == junc_meta.cluster for clu in cluster_ids ]
-    cluster_counts = [ np.array(counts.loc[ i,: ]).transpose() for i in idx ]
-    
-    task_task = partial(task, torch_types = torch_types, 
-            kwargs = kwargs, 
+    task_task = partial(task, torch_types = torch_types,
+            kwargs = kwargs,
             x = x, confounders = confounders, max_cluster_size=max_cluster_size, min_samples_per_intron=min_samples_per_intron, min_samples_per_group=min_samples_per_group, min_coverage=min_coverage, min_unique_vals = min_coverage)
 
-    with Pool(processes=num_cores) as pool:
-        pool_results = pool.map(task_task, zip(cluster_ids, cluster_counts, idx))
+    def _cluster_iter():
+        # Yield tasks lazily — avoids holding all cluster count matrices in memory at once
+        for clu, grp in junc_meta.groupby('cluster', sort=False):
+            yield (clu, np.array(counts.loc[grp.index,:]).transpose(), grp.index)
+
+    def _init_worker():
+        # Each worker process should use one thread so parallel workers don't fight over cores
+        torch.set_num_threads(1)
+
+    with Pool(processes=num_cores, initializer=_init_worker) as pool:
+        pool_results = list(pool.imap(task_task, _cluster_iter(), chunksize=max(1, len(cluster_ids) // (num_cores * 8))))
 
     status_df = pd.DataFrame({ "status" : [ g[0] for g in pool_results ]}) 
     status_df.index = cluster_ids

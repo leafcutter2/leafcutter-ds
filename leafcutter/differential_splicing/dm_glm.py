@@ -367,7 +367,7 @@ def dirichlet_multinomial_anova(x_full, x_null, y, init = "brr", **kwargs):
     if lrtp < 0.001: # if result looks highly significant, check if we could improve fit initializing null based on full
         beta_init_null = full_fit.beta[:P_null,:]
         refit_null = fit_dm_glm(x_null, y, beta_init_null, **kwargs )
-        if refit_null.loss < refit_null.loss: # if new fit is better
+        if refit_null.loss < null_fit.loss: # if new fit is better
             null_fit = refit_null
             refit_null_flag = True
             loglr = null_fit.loss-full_fit.loss
