@@ -35,6 +35,6 @@ We've developed a leafcutter [shiny](https://shiny.rstudio.com/) app for visuali
 ### Why another implementation? ###
 The short answer is that the Rstan dependecies that were difficult to install for many users, so we made this python/pyro version to overcome that. At the same time, we took the opportunity to make it compatible with new leafcutter methods to annotate unproductive splicing events. 
 
-A much more detailed write-up on this version please see our readthedocs.
+A much more detailed write-up on this version please see our [docs page](https://leafcutter2.github.io/leafcutter-ds/).
 
 

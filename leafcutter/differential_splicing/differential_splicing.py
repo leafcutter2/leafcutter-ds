@@ -28,12 +28,50 @@ except:
         ps = ps[np.argsort(order)] # put back in original order
         return np.clip(ps, 0, 1)
     
-def robust_fdr(ps, method = "bh"): 
+def robust_fdr(ps, method = "bh"):
     mask = ~np.isnan(ps)
     p_adjust = ps.copy()
     p_adjust[mask] = false_discovery_control(ps[mask], method = method)
     return p_adjust
-    
+
+def _print_timing_summary(results):
+    if not results:
+        return
+    t_cols = ['t_null_init', 't_null_fit', 't_full_init', 't_full_fit_from_null', 't_full_fit_smart', 't_refit_null']
+    timing = {col: np.array([v[col] for v in results.values()]) for col in t_cols}
+    t_total = sum(timing[c] for c in t_cols)
+
+    def fmt(arr, pct):
+        return f"{np.percentile(arr, pct)*1000:.0f}ms"
+
+    print(f"\n=== Timing summary ({len(results)} successful clusters) ===")
+    print(f"{'Phase':<26}  {'median':>8}  {'p90':>8}  {'total':>10}  {'% of total':>10}")
+    labels = [
+        ('t_null_init',          'Null init (BRR/RR)'),
+        ('t_null_fit',           'Null LBFGS fit'),
+        ('t_full_init',          'Full init (BRR/RR)'),
+        ('t_full_fit_from_null', 'Full LBFGS (null init)'),
+        ('t_full_fit_smart',     'Full LBFGS (smart init)'),
+        ('t_refit_null',         'Refit null (p<0.001)'),
+    ]
+    for col, label in labels:
+        arr = timing[col]
+        frac = arr.sum() / t_total.sum() * 100
+        print(f"  {label:<24}  {fmt(arr,50):>8}  {fmt(arr,90):>8}  {arr.sum()/60:>8.1f}min  {frac:>9.1f}%")
+    print(f"  {'Total':<24}  {fmt(t_total,50):>8}  {fmt(t_total,90):>8}  {t_total.sum()/60:>8.1f}min")
+
+    smart_pct = np.mean([v['smart_init_improved'] for v in results.values()]) * 100
+    print(f"\n  Smart init improved full fit: {smart_pct:.1f}% of clusters")
+
+    for model, col in [('Null', 'null_exit_status'), ('Full', 'full_exit_status')]:
+        statuses = [v[col] for v in results.values()]
+        from collections import Counter
+        counts = Counter(statuses)
+        max_iter_pct = sum(v for k, v in counts.items() if 'maximum' in k) / len(statuses) * 100
+        print(f"\n  {model} model exit statuses (% hitting max_iter: {max_iter_pct:.1f}%):")
+        for status, count in counts.most_common():
+            print(f"    {count:6d} ({count/len(statuses)*100:5.1f}%)  {status}")
+
 def task(inp, x, torch_types, kwargs, confounders = None, max_cluster_size=10, min_samples_per_intron=5, min_samples_per_group=4, min_coverage=0, min_unique_vals = 10):
 
     normalize = lambda g: g/g.sum()
@@ -93,10 +131,10 @@ def task(inp, x, torch_types, kwargs, confounders = None, max_cluster_size=10, m
 
     #fitting_start_time = timer()
     #cluster_time += (fitting_start_time - cluster_start_time)
-    loglr, df, lrtp, null_fit, full_fit, refit_null_flag = dirichlet_multinomial_anova(
-        x_full, 
-        x_null, 
-        y, 
+    loglr, df, lrtp, null_fit, full_fit, refit_null_flag, timing = dirichlet_multinomial_anova(
+        x_full,
+        x_null,
+        y,
         **kwargs)
     #fitting_end_time = timer()
     #fitting_time += (fitting_end_time - fitting_start_time)
@@ -123,7 +161,7 @@ def task(inp, x, torch_types, kwargs, confounders = None, max_cluster_size=10, m
         perturbed], axis = 1)
 
     return [
-        "Success", 
+        "Success",
         {
             'loglr': loglr,
             'null_ll': -null_fit.loss,
@@ -131,8 +169,9 @@ def task(inp, x, torch_types, kwargs, confounders = None, max_cluster_size=10, m
             'full_ll': -full_fit.loss,
             'full_exit_status': full_fit.exit_status,
             'df': df,
-            'p': lrtp
-        }, 
+            'p': lrtp,
+            **timing,
+        },
         junc_results]
 
 
@@ -168,7 +207,7 @@ def differential_splicing(counts, x, confounders = None, max_cluster_size=10, mi
 
     task_task = partial(task, torch_types = torch_types,
             kwargs = kwargs,
-            x = x, confounders = confounders, max_cluster_size=max_cluster_size, min_samples_per_intron=min_samples_per_intron, min_samples_per_group=min_samples_per_group, min_coverage=min_coverage, min_unique_vals = min_coverage)
+            x = x, confounders = confounders, max_cluster_size=max_cluster_size, min_samples_per_intron=min_samples_per_intron, min_samples_per_group=min_samples_per_group, min_coverage=min_coverage, min_unique_vals = min_unique_vals)
 
     def _cluster_iter():
         # Yield tasks lazily — avoids holding all cluster count matrices in memory at once
@@ -176,16 +215,27 @@ def differential_splicing(counts, x, confounders = None, max_cluster_size=10, mi
             yield (clu, np.array(counts.loc[grp.index,:]).transpose(), grp.index)
 
     def _init_worker():
-        # Each worker process should use one thread so parallel workers don't fight over cores
+        # Limit PyTorch threads
         torch.set_num_threads(1)
+        # Also limit numpy/scikit-learn BLAS threads (BayesianRidge uses these)
+        try:
+            from threadpoolctl import threadpool_limits
+            threadpool_limits(1)
+        except ImportError:
+            import os
+            for var in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "BLIS_NUM_THREADS"]:
+                os.environ[var] = "1"
 
     with Pool(processes=num_cores, initializer=_init_worker) as pool:
         pool_results = list(pool.imap(task_task, _cluster_iter(), chunksize=max(1, len(cluster_ids) // (num_cores * 8))))
 
-    status_df = pd.DataFrame({ "status" : [ g[0] for g in pool_results ]}) 
+    status_df = pd.DataFrame({ "status" : [ g[0] for g in pool_results ]})
     status_df.index = cluster_ids
 
     results = { k:v[1] for k,v in zip(cluster_ids, pool_results) if v[0] == "Success" }
+
+    if timeit:
+        _print_timing_summary(results)
     cluster_table = pd.DataFrame(results.values()) 
     cluster_table.index = results.keys()
     cluster_table['p.adjust'] = robust_fdr(cluster_table['p'], method = 'bh')
@@ -284,7 +334,7 @@ def differential_splicing_junc(counts, x, confounders = None, min_samples_per_in
     for clu in tqdm(cluster_ids):
         idx = clu == junc_meta.cluster
         cluster_counts = np.array(counts.loc[ idx,: ]).transpose()
-        res = task_junc(clu, cluster_counts, idx, torch_types = torch_types, kwargs = kwargs, x = x, confounders = confounders, min_samples_per_intron=min_samples_per_intron, min_samples_per_group=min_samples_per_group, min_coverage=min_coverage, min_unique_vals = min_coverage)
+        res = task_junc(clu, cluster_counts, idx, torch_types = torch_types, kwargs = kwargs, x = x, confounders = confounders, min_samples_per_intron=min_samples_per_intron, min_samples_per_group=min_samples_per_group, min_coverage=min_coverage, min_unique_vals = min_unique_vals)
         if res[0] == "Success": 
             introns_to_use = res[1]
             y_here = cluster_counts[:,introns_to_use]
