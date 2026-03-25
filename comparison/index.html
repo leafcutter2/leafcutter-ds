@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.5">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.4">
     
     
       
@@ -706,10 +706,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#this-page-is-under-active-development-stay-tuned" class="md-nav__link">
+  <a href="#implementation-differences" class="md-nav__link">
     <span class="md-ellipsis">
       
-        This page is under active development, stay tuned...
+        Implementation differences
       
     </span>
   </a>
@@ -717,10 +717,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#references" class="md-nav__link">
+  <a href="#algorithmic-differences" class="md-nav__link">
     <span class="md-ellipsis">
       
-        References
+        Algorithmic differences
       
     </span>
   </a>
@@ -870,15 +870,66 @@
   
 
 
-<h1 id="comparison-with-original-leafcutter">Comparison with Original leafcutter</h1>
-<h3 id="this-page-is-under-active-development-stay-tuned">This page is under active development, stay tuned...</h3>
-<p>This page summarizes the differences between this Python/Pyro implementation and the original R/RStan leafcutter.</p>
-<!-- TODO: expand with benchmark comparisons (runtime, sensitivity/specificity) -->
-
+<h1 id="comparison-with-original-leafcutter">Comparison with original leafcutter</h1>
+<h2 id="implementation-differences">Implementation differences</h2>
+<p>The clustering is identical, but the model fitting and implementation between the R version of leafcutter and the python version has a few differences.</p>
+<p>Firstly the R version is based on Stan, while the python version used pyro/pytorch under the hood, both still use Dirichlet-Multinomial modeling for junction counts across clusters and conditions.</p>
+<h2 id="algorithmic-differences">Algorithmic differences</h2>
+<table>
+<thead>
+<tr>
+<th>Approach</th>
+<th>R</th>
+<th>python</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model fitting</td>
+<td>Full model initialized from null model fit</td>
+<td>Full model selected from one initialed from full model or Bayesian Ridge Regression fit</td>
+</tr>
+<tr>
+<td>Timeout</td>
+<td>30 second timeout</td>
+<td>None</td>
+</tr>
+<tr>
+<td>Concentration parameter</td>
+<td>Shared concentration across all K junctions in cluster</td>
+<td>Per-junction concentration</td>
+</tr>
+</tbody>
+</table>
+<h1 id="an-applied-example">An applied example</h1>
+<p>We ran the same data through both python and R pipelines with the same input data.</p>
+<h3 id="the-example-data">The example data</h3>
+<p>In this case we're using <a href="https://www.nature.com/articles/nature12531">Geuvadis data</a> which are lymphoblastiod cell lines derived from donors recriuted from different populations. Within these data, we are studying splicing differences that vary across male vs. female donors accounting for the population as a confounder; for this comparison, we are only conisdering samples produced by the same lab.</p>
+<p>Below are a breakdown of the sample numbers and metadata.</p>
+<p><img alt="Histogram of sex and population sample counts." src="https://github.com/leafcutter2/leafcutter-ds/tree/main/docs/images/Geuvadis_metadata_breakdown.png" /></p>
+<h3 id="comparison-of-p-values-produced-between-the-two-implementations">Comparison of p-values produced between the two implementations</h3>
+<p>Below are scatter plots (one standard and another zoomed in) of the FDR adjusted p-values from both implementations.</p>
+<p><img alt="A scatter plot of the -log10(FDR adjusted p-values) from both implementations" src="https://github.com/leafcutter2/leafcutter-ds/tree/main/docs/images/leafcutter_pvalue_scatterplot.png" />
+<img alt="Zoomed in scatter plots of the -log10(FDR adjusted p-values) from both implementations" src="https://github.com/leafcutter2/leafcutter-ds/tree/main/docs/images/leafcutter_pvalue_scatterplot_zoom.png" /></p>
+<p>Dotted lines indicate the x = y line and the solid lines indicate p-adjusted = 0.05.</p>
+<p>You'll notice that these are highly correlated (Pearson R = 0.968), but not identical.
+Significant R| Signficant python|Count|
+-------------|-------------------|-----|
+Y|Y|53|
+N|N|27,700|
+Y|N|8|
+N|Y|26|</p>
+<p>It shouldn't be shocking, given the different implementations that these aren't identical; it also looks like the python version is finding slightly more exclusively significant clusters than the R version. Many of these are close to p-adjusted in 0.05.</p>
+<p><img alt="Histogram of the exclusively significant p-adjusted values from both implementations." src="https://github.com/leafcutter2/leafcutter-ds/tree/main/docs/images/leafcutter_nonoverlapping_pvalue_histogram.png" /></p>
+<p>Finally, there are a 6 python-only clusters that were successfully fit which were timeouts or failed initializations for the R version.</p>
+<h2 id="performance">Performance</h2>
+<p>Lastly looking at performance, the python version is modestly more CPU efficient and faster, however requires slightly more memory (for this comparison R comes in at 972 MB and the python version comes in at 1.44 GB). The memory required will vary depending on the sample size and number of variables in the model.</p>
+<p><img alt="Bar plot of CPU efficiency (left), and runtime (right) across threads for both implementations." src="https://github.com/leafcutter2/leafcutter-ds/tree/main/docs/images/Performance_comparison.png" /></p>
 <h2 id="references">References</h2>
 <ul>
 <li>Original leafcutter: <a href="https://www.nature.com/articles/s41588-017-0004-9">Li et al. 2018, Nature Genetics</a></li>
-<li>leafcutter2: <a href="https://doi.org/10.1038/s41588-024-01872-x">Knowles et al. 2024, Nature Genetics</a></li>
+<li>leafcutter2: <a href="https://doi.org/10.1038/s41588-024-01872-x">Fair et al. 2024, Nature Genetics</a></li>
+<li>Geuvadis data: <a href="https://www.nature.com/articles/nature12531">Lappalainen et al. 2013, Nature</a></li>
 </ul>
 
 
