@@ -24,7 +24,7 @@ This is compatible with the new [leafcutter2 implmetation](https://github.com/le
 
 <sup>1</sup> Co-authors contributed equally.
 
-Python re-implmementation by David A. Knowles and Scott I. Adamson
+Python re-implementation by David A. Knowles and Scott I. Adamson.
 
 Leafcutter quantifies RNA splicing variation using short-read RNA-seq data. The core idea is to leverage spliced reads (reads that span an intron) to quantify (differential) intron usage across samples. The advantages of this approach include:
 * easy detection of novel introns
