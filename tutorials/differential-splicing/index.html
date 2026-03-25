@@ -289,7 +289,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../api/clustering/" class="md-tabs__link">
+        <a href="../../api/clustering.md" class="md-tabs__link">
           
   
   
@@ -899,7 +899,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/clustering/" class="md-nav__link">
+      <a href="../../api/clustering.md" class="md-nav__link">
         
   
   
@@ -927,7 +927,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/differential-splicing/" class="md-nav__link">
+      <a href="../../api/differential-splicing.md" class="md-nav__link">
         
   
   
@@ -998,10 +998,27 @@ sample4  case     batch2  31
 </code></pre>
 <p>Numeric covariate columns are z-scored; string columns are one-hot encoded (first level dropped).</p>
 <h2 id="optional-exons-file">Optional: exons file</h2>
-<p>This is a tsv file derived from a gtf file that has the following format:
-| chr | start | end | strand | gene_name |
-|-----|-------|-----|--------|-----------|
-|chromosome|exon start|exon end| gene strand|gene name|</p>
+<p>This is a tsv file derived from a gtf file that has the following format:</p>
+<table>
+<thead>
+<tr>
+<th>chr</th>
+<th>start</th>
+<th>end</th>
+<th>strand</th>
+<th>gene_name</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>chromosome</td>
+<td>exon start</td>
+<td>exon end</td>
+<td>gene strand</td>
+<td>gene name</td>
+</tr>
+</tbody>
+</table>
 <p>This can be prepared from a gtf using the following command:</p>
 <p><code>leafcutter-gtf-to-exons input_gtf output_file</code></p>
 <p>This supports gzip compressed input.</p>
