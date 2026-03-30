@@ -69,8 +69,8 @@ if len(meta.columns) > 2:
     transformations = []
     # Iterate over columns in confounders DataFrame
     for col in confounders.columns:
-        if confounders[col].dtype.kind == 'f':
-            # Scale continuous confounders
+        if pd.api.types.is_numeric_dtype(confounders[col]):
+            # Scale continuous confounders (float or integer)
             transformations.append((col, StandardScaler(), [col]))
         else:
             # Treat non-continuous variables as categorical and one-hot encode them

@@ -15,7 +15,7 @@ remotes::install_github("scottiadamson/leafviz")
 ```
 
 ## Data preparation ##
-The data preparation steps for taking leafcutter output and visualizing it with leafviz have been moved to commands within leafviz, which is outlined in the leafviz [README](https://github.com/scottiadamson/leafviz/tree/leafcutter2). 
+The data preparation steps for taking leafcutter output and visualizing it with leafviz have been moved to commands within leafviz, which is outlined in the leafviz [README](https://github.com/jackhump/leafviz). 
 
 
 
