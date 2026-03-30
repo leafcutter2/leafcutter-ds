@@ -2,7 +2,8 @@
 
 A Python re-implementation of the [leafcutter](https://github.com/davidaknowles/leafcutter) differential splicing algorithm.
 
-![Leafcutter logo](https://github.com/leafcutter2/leafcutter-ds/images/logo.png){width=200}
+![Leafcutter logo](images/logo.png){ width="50%" }
+
 ## What does leafcutter do?
 
 **Annotation-free quantification of RNA splicing.**

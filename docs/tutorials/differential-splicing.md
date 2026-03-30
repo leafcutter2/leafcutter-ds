@@ -32,9 +32,10 @@ Numeric covariate columns are z-scored; string columns are one-hot encoded (firs
 
 ## Optional: exons file
 This is a tsv file derived from a gtf file that has the following format:
+
 | chr | start | end | strand | gene_name |
 |-----|-------|-----|--------|-----------|
-|chromosome|exon start|exon end| gene strand|gene name|
+| chromosome | exon start | exon end | gene strand | gene name |
 
 This can be prepared from a gtf using the following command:
 
