@@ -40,6 +40,11 @@ from sklearn.compose import ColumnTransformer
 
 import_end = timer()
 
+if args.device == "cuda":
+    import torch
+    if not torch.cuda.is_available():
+        raise SystemExit("--device cuda was requested but no CUDA runtime is available")
+
 # Access the parsed arguments
 print(f"Loading counts from {args.counts_file}")
 if not pd.io.common.file_exists(args.counts_file):

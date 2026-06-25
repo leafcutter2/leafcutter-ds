@@ -115,14 +115,16 @@ class BayesianBetaBinomialModel(pyro.nn.PyroModule):
         N, J = y.shape
         pyro.clear_param_store()
 
+        device = x.device
         if beta_init is None:
             beta_init = brr_initialization(x, y, n)
+        beta_init = beta_init.to(device)
 
         init_dic = { # GPU-patched
             "beta": beta_init,
-            "conc": torch.full([J], 10., device=beta_init.device), 
-            "gamma_shape" : torch.tensor(2., device=beta_init.device), 
-            "gamma_rate" : torch.tensor(0.2, device=beta_init.device), 
+            "conc": torch.full([J], 10., device=device),
+            "gamma_shape" : torch.tensor(2., device=device),
+            "gamma_rate" : torch.tensor(0.2, device=device),
             "beta_scale" : torch.std(beta_init)
         }
 
@@ -159,10 +161,10 @@ def estimate_marginal_posterior(logw, alpha, pi = None):
     if alpha == 1.: # variational inference
         log_marg = logw.mean(0)
     elif alpha == 0.: # importance sampling
-        log_marg = logw.logsumexp(0) - torch.log(torch.tensor(float(num_samples), device=logw.device))
+        log_marg = logw.logsumexp(0) - torch.log(logw.new_tensor(num_samples))
     else: # renyi
         one_minus_alpha = 1. - alpha
-        log_marg = (one_minus_alpha * logw).logsumexp(0) - torch.log(torch.tensor(float(num_samples), device=logw.device))
+        log_marg = (one_minus_alpha * logw).logsumexp(0) - torch.log(logw.new_tensor(num_samples))
         log_marg /= one_minus_alpha
     log_bayes_factor = log_marg[1] - log_marg[0]
     if pi is not None:
