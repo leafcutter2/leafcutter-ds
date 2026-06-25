@@ -238,10 +238,11 @@ class SpikeAndSlabModel(pyro.nn.PyroModule):
         gamma_rate = convertr(self.gamma_rate, "gamma_rate", device = device)
 
         prior_prob = convertr(self.prior_prob, "prior_prob", device = device)
-        # Only relocate a constant prior. A Distribution prior is drawn via pyro.sample
-        # (inside convertr) and must stay on that sample site's device, so don't .to() it.
-        if not isinstance(self.prior_prob, torch.distributions.Distribution) and isinstance(prior_prob, torch.Tensor):
-            prior_prob = prior_prob.to(device)
+        # A Distribution prior is drawn via pyro.sample (inside convertr) and must stay on
+        # that sample site's device. A constant prior (tensor / list / ndarray) is
+        # materialized on `device` so CUDA runs never fall back to a CPU tensor.
+        if not isinstance(self.prior_prob, torch.distributions.Distribution):
+            prior_prob = torch.as_tensor(prior_prob, device=device)
         mix = dist.Categorical(prior_prob).expand([J])
         #print("mix shapes", mix.batch_shape, mix.event_shape) # [J],[]
 
