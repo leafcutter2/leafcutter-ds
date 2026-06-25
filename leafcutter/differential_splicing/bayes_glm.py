@@ -315,7 +315,7 @@ class SpikeAndSlabModel(pyro.nn.PyroModule):
             "beta_full": beta_full_init,
             "beta_null": beta_null_init,
             "conc": conc_init, 
-            "mixing_probs" : torch.tensor([0.9,0.1])
+            "prior_prob" : torch.tensor([0.9,0.1])
         }
 
         guide = AutoGuideList(self)
@@ -330,7 +330,7 @@ class SpikeAndSlabModel(pyro.nn.PyroModule):
             init_loc_fn = init_to_value(values=init_dic)))
         if isinstance(self.prior_prob, torch.distributions.Distribution):
             guide.add(AutoDiagonalNormal(
-                poutine.block(self, expose = ['mixing_probs']),
+                poutine.block(self, expose = ['prior_prob']),
                 init_loc_fn = init_to_value(values=init_dic)))
         
         if isinstance(self.beta_full_scale, torch.distributions.Distribution):
