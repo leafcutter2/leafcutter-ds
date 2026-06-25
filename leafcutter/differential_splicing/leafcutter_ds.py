@@ -47,6 +47,8 @@ if args.device == "cuda":
     import torch
     if not torch.cuda.is_available():
         raise SystemExit("--device cuda was requested but no CUDA runtime is available")
+    if args.num_threads > 1:
+        raise SystemExit("--device cuda is incompatible with --num_threads > 1: clusters are fit in forked worker processes and CUDA cannot be re-initialized after a fork. Re-run with --num_threads 1.")
 
 # Access the parsed arguments
 print(f"Loading counts from {args.counts_file}")
