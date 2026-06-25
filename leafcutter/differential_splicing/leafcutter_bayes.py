@@ -21,6 +21,7 @@ parser.add_argument("-e", "--exon_file", default=None, help="File defining known
 parser.add_argument("--init", default="brr", help="One of One of brr (Bayesian ridge regression, default), rr (ridge regression), mult (multinomial logistic regression) or `0` (set to 0).")
 parser.add_argument("--timeit", default=False, type = bool, help="Whether to print out total time spent at different steps of leafcutter-ds. This is mostly for benchmarking or debugging.")
 parser.add_argument("-p", "--num_threads", default=1, type=int, help="Number of threads to use  [default %(default)s]")
+parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"], help="torch device for the model fit [default %(default)s]")
 
 # Parse the command-line arguments
 #args = parser.parse_args("-o real muris_leaf_perind_numers.counts.gz group_leaf_random9.txt".split())
@@ -102,6 +103,6 @@ print("Settings: " + str(args))
 print("Running differential splicing analysis.")
 
 setup_end = timer()
-losses_null, losses_full, losses, junc_table = differential_splicing_junc(counts, meta["group"], confounders = confounders, min_samples_per_intron = args.min_samples_per_intron, min_samples_per_group = args.min_samples_per_group, min_coverage = args.min_coverage, device = "cpu", num_cores = args.num_threads, timeit = args.timeit)
+losses_null, losses_full, losses, junc_table = differential_splicing_junc(counts, meta["group"], confounders = confounders, min_samples_per_intron = args.min_samples_per_intron, min_samples_per_group = args.min_samples_per_group, min_coverage = args.min_coverage, device = args.device, num_cores = args.num_threads, timeit = args.timeit)
 
 junc_table.to_csv(args.output_prefix + "_junction_results.txt", sep = '\t', index = False, na_rep='NA')
