@@ -44,11 +44,14 @@ from sklearn.pipeline import Pipeline
 import_end = timer()
 
 if args.device == "cuda":
-    import torch
-    if not torch.cuda.is_available():
-        raise SystemExit("--device cuda was requested but no CUDA runtime is available")
-    if args.num_threads > 1:
-        raise SystemExit("--device cuda is incompatible with --num_threads > 1: clusters are fit in forked worker processes and CUDA cannot be re-initialized after a fork. Re-run with --num_threads 1.")
+    # leafcutter-ds fits every cluster inside a forked multiprocessing.Pool worker, and
+    # PyTorch cannot use CUDA across a fork. Refuse here, before touching any torch.cuda
+    # API (which would eagerly initialize CUDA in the parent and poison the fork).
+    raise SystemExit(
+        "--device cuda is not supported by leafcutter-ds: clusters are fit inside a forked "
+        "multiprocessing.Pool and PyTorch cannot use CUDA across a fork. Use leafcutter-bayes "
+        "for GPU-accelerated differential splicing, or run leafcutter-ds with --device cpu."
+    )
 
 # Access the parsed arguments
 print(f"Loading counts from {args.counts_file}")
