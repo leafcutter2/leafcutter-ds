@@ -365,9 +365,9 @@ def differential_splicing_junc(counts, x, confounders = None, min_samples_per_in
         x_null = torch.cat((intercept, these_confounders), axis = 1)
 
     sas = bayes_glm.SpikeAndSlabModel(
-        gamma_shape = dist.Gamma(2., 1.) if learn_conc_prior else 2., 
-        gamma_rate = dist.Gamma(2., 10.) if learn_conc_prior else 0.2, 
-        beta_scale = dist.HalfCauchy(1.) if learn_beta_scale_prior else 2. 
+        gamma_shape = dist.Gamma(torch.tensor(2., device=device), torch.tensor(1., device=device)) if learn_conc_prior else 2.,
+        gamma_rate = dist.Gamma(torch.tensor(2., device=device), torch.tensor(10., device=device)) if learn_conc_prior else 0.2,
+        beta_scale = dist.HalfCauchy(torch.tensor(1., device=device)) if learn_beta_scale_prior else 2.
     )
     losses_null, losses_full, losses = sas.fit(x_null, x_full, y, n, alpha = 0., num_particles = 1, **kwargs)
     marg_prob, log_bayes_factor = sas.estimate_marginal_posterior(x_null, x_full, y, n, alpha = 1.)
