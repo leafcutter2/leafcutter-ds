@@ -108,7 +108,18 @@ scale_factor = 1.
 
 if meta["group"].dtype.kind in 'OUS': # Object Unicode String => Categorical
     # Convert the "group" column in meta to a categorical variable with ordered levels
-    unique_values = sorted(set(meta["group"]), key=lambda g: g != args.baseline_group)
+    # group_values_in_file_order preserves first-appearance order (dict keys are
+    # insertion-ordered), unlike set(), whose iteration order for strings is not
+    # guaranteed stable across runs (Python hash randomization). If baseline_group
+    # (default "Control") doesn't match either observed group, fall back to the
+    # first group encountered in the file, matching leafcutter_ds.R's behavior
+    # (`unique(meta$group)[1]`), instead of leaving the choice to set() ordering.
+    group_values_in_file_order = list(dict.fromkeys(meta["group"]))
+    if args.baseline_group not in group_values_in_file_order:
+        fallback = group_values_in_file_order[0]
+        print(f"Warning: baseline_group '{args.baseline_group}' not found among observed groups {group_values_in_file_order}. Defaulting to '{fallback}' (the first group encountered in {args.groups_file}).")
+        args.baseline_group = fallback
+    unique_values = sorted(group_values_in_file_order, key=lambda g: g != args.baseline_group)
     meta["group"] = pd.Categorical(meta["group"], categories=unique_values, ordered=True)
 
     num_groups_w_enough_samples_1 = (meta["group"].value_counts() >= args.min_samples_per_intron).sum()
