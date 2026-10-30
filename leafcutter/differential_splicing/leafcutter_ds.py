@@ -9,7 +9,7 @@ parser.add_argument("counts_file", help="Intron usage counts file. Must be .txt 
 
 parser.add_argument("groups_file", help="Two+K column file: 1. sample names (must match column names in counts_file), 2. groups (currently only two groups, i.e. pairwise, supported. Some samples in counts_file can be missing from this file, in which case they will not be included in the analysis. Additional columns can be used to specify confounders, e.g. batch/sex/age. Numeric columns will be treated as continuous, so use e.g. batch1, batch2, batch3 rather than 1, 2, 3 if you have a categorical variable.")
 
-parser.add_argument("-0", "--baseline_group", default="Control", help="Only for categorical x: the group to which others will be compared [default %(default)s].")
+parser.add_argument("-0", "--baseline_group", help="Only for categorical x: the group to which others will be compared [defaults to the first item in groups.txt if unspecified].")
 parser.add_argument("-o", "--output_prefix", default="leafcutter_ds", help="The prefix for the output files, <prefix>_cluster_significance.txt (containing test status, log likelihood ratio, degree of freedom, and p-value for each cluster) and <prefix>_effect_sizes.txt (containing the effect sizes and estimated PSI for each intron) [default %(default)s]")
 parser.add_argument("-s", "--max_cluster_size", default=float('inf'), type=int, help="Don't test clusters with more introns than this [default %(default)s]")
 parser.add_argument("-i", "--min_samples_per_intron", default=5, type=int, help="Ignore introns used (i.e. at least one supporting read) in fewer than n samples [default %(default)s]")
@@ -108,7 +108,13 @@ scale_factor = 1.
 
 if meta["group"].dtype.kind in 'OUS': # Object Unicode String => Categorical
     # Convert the "group" column in meta to a categorical variable with ordered levels
-    unique_values = sorted(set(meta["group"]), key=lambda g: g != args.baseline_group)
+    group_values_in_file_order = list(dict.fromkeys(meta["group"]))
+    if args.baseline_group is None:
+        args.baseline_group = group_values_in_file_order[0]
+        print(f"Warning: no --baseline_group specified; setting the baseline group to {args.baseline_group}")
+    elif args.baseline_group not in group_values_in_file_order:
+        raise ValueError(f"{args.baseline_group} is not in the groups file, or has been filtered out for missing covariates; please use one of {', '.join(group_values_in_file_order)}")
+    unique_values = sorted(group_values_in_file_order, key=lambda g: g != args.baseline_group)
     meta["group"] = pd.Categorical(meta["group"], categories=unique_values, ordered=True)
 
     num_groups_w_enough_samples_1 = (meta["group"].value_counts() >= args.min_samples_per_intron).sum()
@@ -178,7 +184,8 @@ cluster_table.loc[:,cluster_out_cols].to_csv(output_prefix + "_cluster_significa
 
 #just rearranging junction columns for backwards compatibility
 rename_juncs = dict(zip(list(junc_table.columns), list(junc_table.columns)))
-rename_juncs['psi_0'] = 'psi_' + args.baseline_group
+if args.baseline_group is not None:
+    rename_juncs['psi_0'] = 'psi_' + args.baseline_group
 junc_table.rename(rename_juncs, axis = 1, inplace = True)
 logef_cols = list(junc_table.columns[junc_table.columns.str.startswith('logef_')])
 psi_cols = list(junc_table.columns[junc_table.columns.str.startswith('psi_')])
