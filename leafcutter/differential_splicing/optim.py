@@ -90,8 +90,10 @@ def _strong_wolfe(obj_func,
     # a bracket around it. We refine the bracket until we find the
     # exact point satisfying the criteria
     insuf_progress = False
-    # find high and low points in bracket
-    low_pos, high_pos = (0, 1) if bracket_f[0] <= bracket_f[-1] else (1, 0)
+    if len(bracket) == 1:
+        low_pos = high_pos = 0
+    else:
+        low_pos, high_pos = (0, 1) if bracket_f[0] <= bracket_f[-1] else (1, 0)
     while not done and ls_iter < max_ls:
         # line-search bracket is so small
         if abs(bracket[1] - bracket[0]) * d_norm < tolerance_change:
@@ -435,9 +437,19 @@ def fit_with_lbfgs(model, guide, data, outer_iterations = 1, **lbfgs_kwargs):
     optimizer = MyLBFGS(params, **lbfgs_kwargs) #lr=0.05, max_iter=inner_iterations, tolerance_grad=1e-4, history_size = 20)
     #optimizer = torch.optim.LBFGS(params, **lbfgs_kwargs)
     
+    nan_losses = [0]   # non-finite losses seen, reported with exit_status
     def closure(): # slightly awkward requirement of torch.optim.LBFGS
         optimizer.zero_grad()
         loss = loss_fn(model, guide, *data)
+        if not torch.isfinite(loss):
+            # A NaN or inf loss must never reach the line search.
+            for p in params:
+                if p.grad is None:
+                    p.grad = torch.zeros_like(p)
+                else:
+                    p.grad.zero_()
+            nan_losses[0] += 1
+            return torch.full((), 1e30, dtype=loss.dtype, device=loss.device)
         loss.backward()
         return loss
     
@@ -447,4 +459,6 @@ def fit_with_lbfgs(model, guide, data, outer_iterations = 1, **lbfgs_kwargs):
         #losses += [ losses_here.item() ]
         losses += losses_here
     #losses.append(loss_fn(model, guide, *data).item())
+    if nan_losses[0]:
+        optimizer.exit_status += f" [{nan_losses[0]} non-finite losses skipped]"
     return np.array(losses), optimizer.exit_status # "Converged" 
