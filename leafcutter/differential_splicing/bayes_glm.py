@@ -115,14 +115,16 @@ class BayesianBetaBinomialModel(pyro.nn.PyroModule):
         N, J = y.shape
         pyro.clear_param_store()
 
+        device = x.device
         if beta_init is None:
             beta_init = brr_initialization(x, y, n)
+        beta_init = beta_init.to(device)
 
-        init_dic = { # TODO: GPU 
+        init_dic = { # GPU-patched
             "beta": beta_init,
-            "conc": torch.full([J], 10.), 
-            "gamma_shape" : 2., 
-            "gamma_rate" : 0.2, 
+            "conc": torch.full([J], 10., device=device),
+            "gamma_shape" : torch.tensor(2., device=device),
+            "gamma_rate" : torch.tensor(0.2, device=device),
             "beta_scale" : torch.std(beta_init)
         }
 
@@ -159,10 +161,10 @@ def estimate_marginal_posterior(logw, alpha, pi = None):
     if alpha == 1.: # variational inference
         log_marg = logw.mean(0)
     elif alpha == 0.: # importance sampling
-        log_marg = logw.logsumexp(0) - torch.log(torch.tensor(num_samples))
+        log_marg = logw.logsumexp(0) - torch.log(logw.new_tensor(num_samples))
     else: # renyi
         one_minus_alpha = 1. - alpha
-        log_marg = (one_minus_alpha * logw).logsumexp(0) - torch.log(torch.tensor(num_samples))
+        log_marg = (one_minus_alpha * logw).logsumexp(0) - torch.log(logw.new_tensor(num_samples))
         log_marg /= one_minus_alpha
     log_bayes_factor = log_marg[1] - log_marg[0]
     if pi is not None:
@@ -235,7 +237,12 @@ class SpikeAndSlabModel(pyro.nn.PyroModule):
         gamma_shape = convertr(self.gamma_shape, "gamma_shape", device = device)
         gamma_rate = convertr(self.gamma_rate, "gamma_rate", device = device)
 
-        prior_prob = convertr(self.prior_prob, "prior_prob")
+        prior_prob = convertr(self.prior_prob, "prior_prob", device = device)
+        # A Distribution prior is drawn via pyro.sample (inside convertr) and must stay on
+        # that sample site's device. A constant prior (tensor / list / ndarray) is
+        # materialized on `device` so CUDA runs never fall back to a CPU tensor.
+        if not isinstance(self.prior_prob, torch.distributions.Distribution):
+            prior_prob = torch.as_tensor(prior_prob, device=device)
         mix = dist.Categorical(prior_prob).expand([J])
         #print("mix shapes", mix.batch_shape, mix.event_shape) # [J],[]
 
@@ -300,22 +307,23 @@ class SpikeAndSlabModel(pyro.nn.PyroModule):
             print("Fitting full model")
             losses_full, final_elbo, beta_full_init, conc_full_init = bin_then_bb_glm(x_full, y, n, lr = lr, iterations = iterations // 2)
 
+        _dev = x_full.device
         if conc_null_init is None:
-            conc_null_init = torch.full([J], 10.)
+            conc_null_init = torch.full([y.shape[1]], 10., device=_dev)
 
         if conc_full_init is None:
-            conc_full_init = torch.full([J], 10.)
+            conc_full_init = torch.full([y.shape[1]], 10., device=_dev)
 
         if self.per_hyp_conc:
             conc_init = torch.stack([conc_null_init, conc_full_init])
         else: 
             conc_init = conc_null_init
 
-        init_dic = { # TODO: GPU 
+        init_dic = { # GPU-patched
             "beta_full": beta_full_init,
             "beta_null": beta_null_init,
             "conc": conc_init, 
-            "mixing_probs" : torch.tensor([0.9,0.1])
+            "mixing_probs" : torch.tensor([0.9,0.1], device=x_full.device)
         }
 
         guide = AutoGuideList(self)
@@ -376,7 +384,7 @@ class SpikeAndSlabModel(pyro.nn.PyroModule):
         beta_null = guide_median["beta_null"]
         conc_param = guide_median["conc"]
         
-        mixing_probs = torch.tensor([0.9,0.1]) # TODO: learned
+        mixing_probs = torch.tensor([0.9,0.1], device=x_full.device) # GPU-patched
         mix = dist.Categorical(mixing_probs).expand([J])
         
         logits_full = x_full @ beta_full
