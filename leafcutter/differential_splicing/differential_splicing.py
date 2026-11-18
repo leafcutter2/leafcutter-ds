@@ -10,6 +10,36 @@ from multiprocessing import Pool # 33s to fit.
 from functools import partial
 import pyro.distributions as dist
 
+
+def _resolve_dtype(dtype):
+    """Accept "float32"/"float64" (or a torch.dtype) and return a torch.dtype.
+    """
+    if isinstance(dtype, str):
+        resolved = getattr(torch, dtype, None)
+        if not isinstance(resolved, torch.dtype):
+            raise ValueError(
+                f"unknown dtype {dtype!r}; use 'float32' or 'float64'")
+        return resolved
+    return dtype
+
+def _init_worker():
+    """Pool initializer: keep each worker single threaded.
+    
+    This is implemented at the module level because `spawn` and `forkserver` pickle 
+    the initializer and the closures aren't pickleable.
+    """
+    # Limit PyTorch threads
+    torch.set_num_threads(1)
+    # Also limit numpy/scikit-learn BLAS threads (BayesianRidge uses these)
+    try:
+        from threadpoolctl import threadpool_limits
+        threadpool_limits(1)
+    except ImportError:
+        import os
+        for var in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "BLIS_NUM_THREADS"]:
+            os.environ[var] = "1"
+
+
 #import concurrent.futures as cnc # not compatible with pyro
 #from pathos.multiprocessing import ProcessingPool as Pool # 24s
 #from joblib import Parallel, delayed # 60s
@@ -175,7 +205,7 @@ def task(inp, x, torch_types, kwargs, confounders = None, max_cluster_size=10, m
         junc_results]
 
 
-def differential_splicing(counts, x, confounders = None, max_cluster_size=10, min_samples_per_intron=5, min_samples_per_group=4, min_coverage=0, min_unique_vals = 10, device = "cpu", timeit = False, num_cores = 1,  **kwargs):
+def differential_splicing(counts, x, confounders = None, max_cluster_size=10, min_samples_per_intron=5, min_samples_per_group=4, min_coverage=0, min_unique_vals = 10, device = "cpu", timeit = False, num_cores = 1,  dtype = "float64", **kwargs):
     '''Perform pairwise differential splicing analysis.
 
     counts: An [introns] x [samples] dataframe of counts. The rownames must be of the form chr:start:end:cluid. If the counts file comes from the leafcutter clustering code this should be the case already.
@@ -199,7 +229,7 @@ def differential_splicing(counts, x, confounders = None, max_cluster_size=10, mi
     junc_meta = junc_split.rename(columns = col_names)
     cluster_ids = junc_meta.cluster.unique()
 
-    torch_types = { "device" : device, "dtype" : torch.float } # would we ever want float64? 
+    torch_types = { "device" : device, "dtype" : _resolve_dtype(dtype) }
     
     cluster_time = 0
     fitting_time = 0
@@ -213,18 +243,6 @@ def differential_splicing(counts, x, confounders = None, max_cluster_size=10, mi
         # Yield tasks lazily — avoids holding all cluster count matrices in memory at once
         for clu, grp in junc_meta.groupby('cluster', sort=False):
             yield (clu, np.array(counts.loc[grp.index,:]).transpose(), grp.index)
-
-    def _init_worker():
-        # Limit PyTorch threads
-        torch.set_num_threads(1)
-        # Also limit numpy/scikit-learn BLAS threads (BayesianRidge uses these)
-        try:
-            from threadpoolctl import threadpool_limits
-            threadpool_limits(1)
-        except ImportError:
-            import os
-            for var in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "BLIS_NUM_THREADS"]:
-                os.environ[var] = "1"
 
     with Pool(processes=num_cores, initializer=_init_worker) as pool:
         pool_results = list(pool.imap(task_task, _cluster_iter(), chunksize=max(1, len(cluster_ids) // (num_cores * 8))))
@@ -296,7 +314,7 @@ def task_junc(clu, cluster_counts, idx, x, torch_types, kwargs, confounders = No
     return ["Success", introns_to_use]
 
 
-def differential_splicing_junc(counts, x, confounders = None, min_samples_per_intron=5, min_samples_per_group=4, min_coverage=0, min_unique_vals = 10, device = "cpu", timeit = False, num_cores = 1, learn_conc_prior = False, learn_beta_scale_prior = True,  **kwargs):
+def differential_splicing_junc(counts, x, confounders = None, min_samples_per_intron=5, min_samples_per_group=4, min_coverage=0, min_unique_vals = 10, device = "cpu", timeit = False, num_cores = 1, learn_conc_prior = False, learn_beta_scale_prior = True,  dtype = "float64", **kwargs):
     '''Perform pairwise differential splicing analysis.
 
     counts: An [introns] x [samples] dataframe of counts. The rownames must be of the form chr:start:end:cluid. If the counts file comes from the leafcutter clustering code this should be the case already.
@@ -321,7 +339,7 @@ def differential_splicing_junc(counts, x, confounders = None, min_samples_per_in
     cluster_ids = junc_meta.cluster.unique()
     normalize = lambda g: g/g.sum()
     
-    torch_types = { "device" : device, "dtype" : torch.float } # would we ever want float64? 
+    torch_types = { "device" : device, "dtype" : _resolve_dtype(dtype) }
     
     cluster_time = 0
     fitting_time = 0

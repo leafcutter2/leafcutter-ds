@@ -20,190 +20,211 @@ parser.add_argument("-e", "--exon_file", default=None, help="File defining known
 parser.add_argument("--init", default="brr", help="One of One of brr (Bayesian ridge regression), rr (ridge regression), mult (multinomial logistic regression) or `0` (set to 0).")
 parser.add_argument("--timeit", default=False, type = bool, help="Whether to print out total time spent at different steps of leafcutter-ds. This is mostly for benchmarking or debugging.")
 parser.add_argument("-p", "--num_threads", default=1, type=int, help="Number of threads to use  [default %(default)s]")
+parser.add_argument("--dtype", default="float64", choices=["float32", "float64"], help="Floating point precision for the GLM fits. loglr is a difference of two large losses, so float32 leaves it with only 1-3 significant digits and makes it depend on the CPU architecture; float64 costs some speed and memory [default %(default)s]")
   
 
 # Parse the command-line arguments
-args = parser.parse_args()
-#args = parser.parse_args("-0 male --exon_file gencode.v43.basic.annotation_exons.txt.gz -o python_sex --timeit True Geuvadis_M_vs_F_perind_numers.counts_sample.gz sex_groups.txt".split())
 
-from timeit import default_timer as timer
-import_start = timer()
-import leafcutter
-from leafcutter.differential_splicing.differential_splicing import differential_splicing
-import leafcutter.utils
+def main():
+    """Parse arguments and run the analysis.
 
-import pandas as pd
-from collections import defaultdict
-import os
-import sys
-import numpy as np
-from sklearn.preprocessing import StandardScaler, OneHotEncoder, scale
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-import_end = timer()
+    Wrapped in a function and called under `if __name__ == "__main__"` because
+    `differential_splicing` uses a multiprocessing Pool. Under the `spawn` and
+    `forkserver` start methods the child rebuilds the main module by
+    re-importing this file, so anything at module level runs again in every
+    worker -- including `parse_args`, which would see the child's argv, and
+    the analysis itself, which would try to spawn its own Pool.
 
-# Access the parsed arguments
-print(f"Loading counts from {args.counts_file}")
-if not pd.io.common.file_exists(args.counts_file):
-    raise FileNotFoundError(f"File {args.counts_file} does not exist")
-counts = pd.read_table(args.counts_file, sep = '\s+')
-# Handle files with or without an index label in the header
-# If first column is non-numeric (e.g. junction IDs), use it as index
-if not pd.api.types.is_numeric_dtype(counts.iloc[:, 0]):
-    counts = counts.set_index(counts.columns[0])
+    macOS has defaulted to `spawn` since 10.14 and CPython 3.14 moved Linux
+    from `fork` to `forkserver` (gh-84559). Under `fork` this is a no-op, so
+    one code path works everywhere.
+    """
+    args = parser.parse_args()
+    #args = parser.parse_args("-0 male --exon_file gencode.v43.basic.annotation_exons.txt.gz -o python_sex --timeit True Geuvadis_M_vs_F_perind_numers.counts_sample.gz sex_groups.txt".split())
 
-# Loading metadata from groups_file
-print(f"Loading metadata from {args.groups_file}")
-if not pd.io.common.file_exists(args.groups_file):
-    raise FileNotFoundError(f"File {args.groups_file} does not exist")
-meta = pd.read_table(args.groups_file, header=None, sep = '\s+')
-meta = meta.rename(dict(zip([0, 1], ["sample", "group"])), axis = 1)
+    from timeit import default_timer as timer
+    import_start = timer()
+    import leafcutter
+    from leafcutter.differential_splicing.differential_splicing import differential_splicing
+    import leafcutter.utils
 
-# Check if there are more than 2 columns in the metadata DataFrame
-confounders = None
-if len(meta.columns) > 2:
-    # Extract the confounders (columns 3 and onwards)
-    confounders = meta.iloc[:, 2:]
-    confounders.columns = confounders.columns.astype(str)
-    # Initialize a list to store column transformations
-    transformations = []
-    # Iterate over columns in confounders DataFrame
-    for col in confounders.columns:
-        if pd.api.types.is_numeric_dtype(confounders[col]):
-            # Scale continuous confounders (float or integer)
-            transformations.append((col, StandardScaler(), [col]))
-        else:
-            # Treat non-continuous variables as categorical and one-hot encode them
-            transformations.append((col, OneHotEncoder(drop='first', sparse_output=False), [col]))
-    # Create a column transformer to apply the specified transformations
-    column_transformer = ColumnTransformer(transformations)
-    # Fit and transform the confounders
-    confounders = column_transformer.fit_transform(confounders)
-    #remove samples with missing data (not in origial leafcutter as far as I can tell).
-    confounders = pd.DataFrame(confounders, index = meta['sample']).dropna()
+    import pandas as pd
+    from collections import defaultdict
+    import os
+    import sys
+    import numpy as np
+    from sklearn.preprocessing import StandardScaler, OneHotEncoder, scale
+    from sklearn.compose import ColumnTransformer
+    from sklearn.pipeline import Pipeline
+    import_end = timer()
 
-    all_samples = set(meta.loc[:,'sample'])
-    removed_samples = all_samples - set(confounders.index)
-    if len(removed_samples) != 0:
-        print('Samples removed due to missing values in covariates...')
-        print(','.join(list(removed_samples)))
+    # Access the parsed arguments
+    print(f"Loading counts from {args.counts_file}")
+    if not pd.io.common.file_exists(args.counts_file):
+        raise FileNotFoundError(f"File {args.counts_file} does not exist")
+    counts = pd.read_table(args.counts_file, sep = '\s+')
+    # Handle files with or without an index label in the header
+    # If first column is non-numeric (e.g. junction IDs), use it as index
+    if not pd.api.types.is_numeric_dtype(counts.iloc[:, 0]):
+        counts = counts.set_index(counts.columns[0])
 
-    # Encode the "group" column as numeric (0 and 1)
-    meta = meta[meta['sample'].isin(confounders.index)]
+    # Loading metadata from groups_file
+    print(f"Loading metadata from {args.groups_file}")
+    if not pd.io.common.file_exists(args.groups_file):
+        raise FileNotFoundError(f"File {args.groups_file} does not exist")
+    meta = pd.read_table(args.groups_file, header=None, sep = '\s+')
+    meta = meta.rename(dict(zip([0, 1], ["sample", "group"])), axis = 1)
 
-    #if permute: numeric_x = np.random.permutation(numeric_x)
-    counts = counts[confounders.index]
-else:
-    # Subset counts to only those in x even without any confounders
-    # edge case for if the counts file has more samples than the groups file
-    original_count_samples = set(counts.columns)
-    if original_count_samples != set(meta['sample']):
-        removed_samples = original_count_samples - set(meta['sample'])
-        print('Samples removed because they are not in the groups file...')
-        print(','.join(list(removed_samples)))
-    counts = counts[meta['sample']]
+    # Check if there are more than 2 columns in the metadata DataFrame
+    confounders = None
+    if len(meta.columns) > 2:
+        # Extract the confounders (columns 3 and onwards)
+        confounders = meta.iloc[:, 2:]
+        confounders.columns = confounders.columns.astype(str)
+        # Initialize a list to store column transformations
+        transformations = []
+        # Iterate over columns in confounders DataFrame
+        for col in confounders.columns:
+            if pd.api.types.is_numeric_dtype(confounders[col]):
+                # Scale continuous confounders (float or integer)
+                transformations.append((col, StandardScaler(), [col]))
+            else:
+                # Treat non-continuous variables as categorical and one-hot encode them
+                transformations.append((col, OneHotEncoder(drop='first', sparse_output=False), [col]))
+        # Create a column transformer to apply the specified transformations
+        column_transformer = ColumnTransformer(transformations)
+        # Fit and transform the confounders
+        confounders = column_transformer.fit_transform(confounders)
+        #remove samples with missing data (not in origial leafcutter as far as I can tell).
+        confounders = pd.DataFrame(confounders, index = meta['sample']).dropna()
+
+        all_samples = set(meta.loc[:,'sample'])
+        removed_samples = all_samples - set(confounders.index)
+        if len(removed_samples) != 0:
+            print('Samples removed due to missing values in covariates...')
+            print(','.join(list(removed_samples)))
+
+        # Encode the "group" column as numeric (0 and 1)
+        meta = meta[meta['sample'].isin(confounders.index)]
+
+        #if permute: numeric_x = np.random.permutation(numeric_x)
+        counts = counts[confounders.index]
+    else:
+        # Subset counts to only those in x even without any confounders
+        # edge case for if the counts file has more samples than the groups file
+        original_count_samples = set(counts.columns)
+        if original_count_samples != set(meta['sample']):
+            removed_samples = original_count_samples - set(meta['sample'])
+            print('Samples removed because they are not in the groups file...')
+            print(','.join(list(removed_samples)))
+        counts = counts[meta['sample']]
     
 
-scale_factor = 1.
+    scale_factor = 1.
 
-if meta["group"].dtype.kind in 'OUS': # Object Unicode String => Categorical
-    # Convert the "group" column in meta to a categorical variable with ordered levels
-    group_values_in_file_order = list(dict.fromkeys(meta["group"]))
-    if args.baseline_group is None:
-        args.baseline_group = group_values_in_file_order[0]
-        print(f"Warning: no --baseline_group specified; setting the baseline group to {args.baseline_group}")
-    elif args.baseline_group not in group_values_in_file_order:
-        raise ValueError(f"{args.baseline_group} is not in the groups file, or has been filtered out for missing covariates; please use one of {', '.join(group_values_in_file_order)}")
-    unique_values = sorted(group_values_in_file_order, key=lambda g: g != args.baseline_group)
-    meta["group"] = pd.Categorical(meta["group"], categories=unique_values, ordered=True)
+    if meta["group"].dtype.kind in 'OUS': # Object Unicode String => Categorical
+        # Convert the "group" column in meta to a categorical variable with ordered levels
+        group_values_in_file_order = list(dict.fromkeys(meta["group"]))
+        if args.baseline_group is None:
+            args.baseline_group = group_values_in_file_order[0]
+            print(f"Warning: no --baseline_group specified; setting the baseline group to {args.baseline_group}")
+        elif args.baseline_group not in group_values_in_file_order:
+            raise ValueError(f"{args.baseline_group} is not in the groups file, or has been filtered out for missing covariates; please use one of {', '.join(group_values_in_file_order)}")
+        unique_values = sorted(group_values_in_file_order, key=lambda g: g != args.baseline_group)
+        meta["group"] = pd.Categorical(meta["group"], categories=unique_values, ordered=True)
 
-    num_groups_w_enough_samples_1 = (meta["group"].value_counts() >= args.min_samples_per_intron).sum()
-    num_groups_w_enough_samples_2 = (meta["group"].value_counts() >= args.min_samples_per_group).sum()
-    if (num_groups_w_enough_samples_1 < 2) or (num_groups_w_enough_samples_2 < 2): 
-        raise ValueError("There are no groups with enough samples to test. You can reduce min_samples_per_intron (-i option) or min_samples_per_group (-g), but note that we have only carefully checked the calibration of leafcutter p-values down to n=4 samples per group.")
+        num_groups_w_enough_samples_1 = (meta["group"].value_counts() >= args.min_samples_per_intron).sum()
+        num_groups_w_enough_samples_2 = (meta["group"].value_counts() >= args.min_samples_per_group).sum()
+        if (num_groups_w_enough_samples_1 < 2) or (num_groups_w_enough_samples_2 < 2): 
+            raise ValueError("There are no groups with enough samples to test. You can reduce min_samples_per_intron (-i option) or min_samples_per_group (-g), but note that we have only carefully checked the calibration of leafcutter p-values down to n=4 samples per group.")
 
-else: # continuous
-    scale_factor = np.std(meta["group"], ddof=0)
-    meta["group"] = scale(meta["group"])
+    else: # continuous
+        scale_factor = np.std(meta["group"], ddof=0)
+        meta["group"] = scale(meta["group"])
 
-print("Settings: " + str(args))
+    print("Settings: " + str(args))
 
-print("Running differential splicing analysis...")
+    print("Running differential splicing analysis...")
 
-setup_end = timer()
-res = differential_splicing(counts, meta["group"], confounders = confounders, max_cluster_size = args.max_cluster_size, min_samples_per_intron = args.min_samples_per_intron, min_samples_per_group = args.min_samples_per_group, min_coverage = args.min_coverage, init = args.init, device = "cpu", num_cores = args.num_threads, timeit = args.timeit)
+    setup_end = timer()
+    res = differential_splicing(counts, meta["group"], confounders = confounders, max_cluster_size = args.max_cluster_size, min_samples_per_intron = args.min_samples_per_intron, min_samples_per_group = args.min_samples_per_group, min_coverage = args.min_coverage, init = args.init, device = "cpu", num_cores = args.num_threads, timeit = args.timeit, dtype = args.dtype)
 
-if args.timeit: 
-    cluster_table, junc_table, status_df, time_dict = res
-else:
-    cluster_table, junc_table, status_df = res
-
-if args.timeit:
-    print("Fit Time", timer() - setup_end)
-
-wrap_up_start = timer()
-cluster_table['cluster'] = cluster_table.index
-
-# get cluster to chromsome mapping example chr2:37649:38658:clu_2_NA
-intron_meta = leafcutter.utils.get_intron_meta(counts.index)
-
-# Add gene names to clusters if an exon file is available
-exon_file = args.exon_file
-if not (exon_file is None):
-    print("Loading exons from " + exon_file)
-    if os.path.isfile(exon_file):
-        exons_table = pd.read_table(exon_file, sep = '\t')
-        exons_table['chr'] = leafcutter.utils.add_chr(exons_table.loc[:,'chr'])
-        intron_meta['chr'] = leafcutter.utils.add_chr(intron_meta.loc[:,'chr'])
-        clu_gene_map = leafcutter.utils.map_clusters_to_genes(intron_meta, exons_table)
-        if clu_gene_map is None: 
-            cluster_table["genes"] = np.nan
-            print("Warning: no clusters matched genes.")
-        else: 
-            cluster_table = cluster_table.merge(clu_gene_map, on = 'cluster', how = 'left')
+    if args.timeit: 
+        cluster_table, junc_table, status_df, time_dict = res
     else:
-        raise FileNotFoundError(f"File {exon_file} does not exist")
-else:
-    cluster_table["genes"] = np.nan
-    print("No exon_file provided.")
+        cluster_table, junc_table, status_df = res
 
-output_prefix = args.output_prefix
+    if args.timeit:
+        print("Fit Time", timer() - setup_end)
 
-cluster_out_cols = ['cluster', 'status', 'loglr', 'df', 'p', 'p.adjust', 'genes']
-# add annotations to cluster dataframe if they exist
-if 'annotation' in intron_meta.columns:
-    cluster_to_annotations = intron_meta.groupby('cluster')['annotation'].agg(lambda x: ','.join(sorted(set(x))))
-    cluster_table['annotations'] = cluster_table['cluster'].map(cluster_to_annotations)
-    cluster_out_cols.append('annotations')
+    wrap_up_start = timer()
+    cluster_table['cluster'] = cluster_table.index
 
-clu_to_chrclu = dict(zip(intron_meta["cluster"], intron_meta["chr"] + ':' + intron_meta["cluster"]))
-cluster_table['cluster'] = cluster_table['cluster'].map(clu_to_chrclu) 
+    # get cluster to chromsome mapping example chr2:37649:38658:clu_2_NA
+    intron_meta = leafcutter.utils.get_intron_meta(counts.index)
 
-print('Saving results...')
-cluster_table.loc[:,cluster_out_cols].to_csv(output_prefix + "_cluster_significance.txt", sep = '\t', index = False, na_rep='NA')
+    # Add gene names to clusters if an exon file is available
+    exon_file = args.exon_file
+    if not (exon_file is None):
+        print("Loading exons from " + exon_file)
+        if os.path.isfile(exon_file):
+            exons_table = pd.read_table(exon_file, sep = '\t')
+            exons_table['chr'] = leafcutter.utils.add_chr(exons_table.loc[:,'chr'])
+            intron_meta['chr'] = leafcutter.utils.add_chr(intron_meta.loc[:,'chr'])
+            clu_gene_map = leafcutter.utils.map_clusters_to_genes(intron_meta, exons_table)
+            if clu_gene_map is None: 
+                cluster_table["genes"] = np.nan
+                print("Warning: no clusters matched genes.")
+            else: 
+                cluster_table = cluster_table.merge(clu_gene_map, on = 'cluster', how = 'left')
+        else:
+            raise FileNotFoundError(f"File {exon_file} does not exist")
+    else:
+        cluster_table["genes"] = np.nan
+        print("No exon_file provided.")
 
-#just rearranging junction columns for backwards compatibility
-rename_juncs = dict(zip(list(junc_table.columns), list(junc_table.columns)))
-if args.baseline_group is not None:
-    rename_juncs['psi_0'] = 'psi_' + args.baseline_group
-junc_table.rename(rename_juncs, axis = 1, inplace = True)
-logef_cols = list(junc_table.columns[junc_table.columns.str.startswith('logef_')])
-psi_cols = list(junc_table.columns[junc_table.columns.str.startswith('psi_')])
-deltapsi_cols = list(junc_table.columns[junc_table.columns.str.startswith('deltapsi_')])
+    output_prefix = args.output_prefix
 
-junc_table.loc[:,['intron'] + logef_cols + psi_cols + deltapsi_cols].to_csv(output_prefix + "_effect_sizes.txt", sep = '\t', index = False, na_rep='NA')
+    cluster_out_cols = ['cluster', 'status', 'loglr', 'df', 'p', 'p.adjust', 'genes']
+    # add annotations to cluster dataframe if they exist
+    if 'annotation' in intron_meta.columns:
+        cluster_to_annotations = intron_meta.groupby('cluster')['annotation'].agg(lambda x: ','.join(sorted(set(x))))
+        cluster_table['annotations'] = cluster_table['cluster'].map(cluster_to_annotations)
+        cluster_out_cols.append('annotations')
 
-wrap_up_end = timer()
-if args.timeit == True:
-    print('Time to import stuff:')
-    print(round((import_end - import_start), 3))
-    print('Time to setup stuff:')
-    print(round((setup_end - import_end), 3))
-    print('Time spent filtering clusters:')
-    print(round(time_dict['cluster_filtering'], 3))
-    print('Time spent fitting model:')
-    print(round(time_dict['fitting'], 3))
-    print('Time spent summarizing results:')
-    print(round(time_dict['results_processing'], 3))
-    print('Time spent wrapping up:')
-    print(round((wrap_up_end - wrap_up_start), 3))
+    clu_to_chrclu = dict(zip(intron_meta["cluster"], intron_meta["chr"] + ':' + intron_meta["cluster"]))
+    cluster_table['cluster'] = cluster_table['cluster'].map(clu_to_chrclu) 
+
+    print('Saving results...')
+    cluster_table.loc[:,cluster_out_cols].to_csv(output_prefix + "_cluster_significance.txt", sep = '\t', index = False, na_rep='NA')
+
+    #just rearranging junction columns for backwards compatibility
+    rename_juncs = dict(zip(list(junc_table.columns), list(junc_table.columns)))
+    if args.baseline_group is not None:
+        rename_juncs['psi_0'] = 'psi_' + args.baseline_group
+    junc_table.rename(rename_juncs, axis = 1, inplace = True)
+    logef_cols = list(junc_table.columns[junc_table.columns.str.startswith('logef_')])
+    psi_cols = list(junc_table.columns[junc_table.columns.str.startswith('psi_')])
+    deltapsi_cols = list(junc_table.columns[junc_table.columns.str.startswith('deltapsi_')])
+
+    junc_table.loc[:,['intron'] + logef_cols + psi_cols + deltapsi_cols].to_csv(output_prefix + "_effect_sizes.txt", sep = '\t', index = False, na_rep='NA')
+
+    wrap_up_end = timer()
+    if args.timeit == True:
+        print('Time to import stuff:')
+        print(round((import_end - import_start), 3))
+        print('Time to setup stuff:')
+        print(round((setup_end - import_end), 3))
+        print('Time spent filtering clusters:')
+        print(round(time_dict['cluster_filtering'], 3))
+        print('Time spent fitting model:')
+        print(round(time_dict['fitting'], 3))
+        print('Time spent summarizing results:')
+        print(round(time_dict['results_processing'], 3))
+        print('Time spent wrapping up:')
+        print(round((wrap_up_end - wrap_up_start), 3))
+
+
+
+if __name__ == "__main__":
+    main()
