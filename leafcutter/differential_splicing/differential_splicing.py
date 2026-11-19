@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import torch
+import warnings
 from collections import defaultdict, OrderedDict
 from leafcutter.differential_splicing.dm_glm import dirichlet_multinomial_anova, SimpleGuide, CleverGuide
 from leafcutter.differential_splicing import bayes_glm
@@ -22,12 +23,22 @@ def _resolve_dtype(dtype):
         return resolved
     return dtype
 
+def _silence_nan_loss_warning():
+    """Drop pyro's per-evaluation "Encountered NaN: loss" UserWarning.
+
+    Now tracked in `exit_status` with `fit_with_lbfgs`.
+    """
+    warnings.filterwarnings("ignore", message="Encountered NaN: loss",
+                            category=UserWarning)
+
+
 def _init_worker():
     """Pool initializer: keep each worker single threaded.
     
     This is implemented at the module level because `spawn` and `forkserver` pickle 
     the initializer and the closures aren't pickleable.
     """
+    _silence_nan_loss_warning()
     # Limit PyTorch threads
     torch.set_num_threads(1)
     # Also limit numpy/scikit-learn BLAS threads (BayesianRidge uses these)
@@ -102,7 +113,21 @@ def _print_timing_summary(results):
         for status, count in counts.most_common():
             print(f"    {count:6d} ({count/len(statuses)*100:5.1f}%)  {status}")
 
-def task(inp, x, torch_types, kwargs, confounders = None, max_cluster_size=10, min_samples_per_intron=5, min_samples_per_group=4, min_coverage=0, min_unique_vals = 10):
+def task(inp, *args, **kwargs):
+    """Run one cluster, turning any exception into a per-cluster status.
+    
+    This makes it so a failing cluster in the same `pool.imap` doesn't take the 
+    rest of the pool with it.
+    """
+    try:
+        return _task(inp, *args, **kwargs)
+    except Exception as e:                                     # noqa: BLE001
+        clu = inp[0] if isinstance(inp, (tuple, list)) and inp else "?"
+        print(f"cluster {clu} failed: {type(e).__name__}: {e}", flush=True)
+        return [f"Failed: {type(e).__name__}: {e}"]
+
+
+def _task(inp, x, torch_types, kwargs, confounders = None, max_cluster_size=10, min_samples_per_intron=5, min_samples_per_group=4, min_coverage=0, min_unique_vals = 10):
 
     normalize = lambda g: g/g.sum()
 
@@ -244,8 +269,13 @@ def differential_splicing(counts, x, confounders = None, max_cluster_size=10, mi
         for clu, grp in junc_meta.groupby('cluster', sort=False):
             yield (clu, np.array(counts.loc[grp.index,:]).transpose(), grp.index)
 
-    with Pool(processes=num_cores, initializer=_init_worker) as pool:
-        pool_results = list(pool.imap(task_task, _cluster_iter(), chunksize=max(1, len(cluster_ids) // (num_cores * 8))))
+    if num_cores == 1:
+        # Skip multiprocessing with 1 core to save some time.
+        _init_worker()
+        pool_results = [ task_task(t) for t in _cluster_iter() ]
+    else:
+        with Pool(processes=num_cores, initializer=_init_worker) as pool:
+            pool_results = list(pool.imap(task_task, _cluster_iter(), chunksize=1))
 
     status_df = pd.DataFrame({ "status" : [ g[0] for g in pool_results ]})
     status_df.index = cluster_ids
@@ -339,6 +369,7 @@ def differential_splicing_junc(counts, x, confounders = None, min_samples_per_in
     cluster_ids = junc_meta.cluster.unique()
     normalize = lambda g: g/g.sum()
     
+    _silence_nan_loss_warning()   # this path fits in-process, not in the Pool
     torch_types = { "device" : device, "dtype" : _resolve_dtype(dtype) }
     
     cluster_time = 0
