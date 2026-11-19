@@ -185,7 +185,9 @@ def main():
 
     output_prefix = args.output_prefix
 
-    cluster_out_cols = ['cluster', 'status', 'loglr', 'df', 'p', 'p.adjust', 'genes']
+    # null/full_exit_status say why each LBFGS fit stopped.
+    cluster_out_cols = ['cluster', 'status', 'loglr', 'df', 'p', 'p.adjust',
+                        'null_exit_status', 'full_exit_status', 'genes']
     # add annotations to cluster dataframe if they exist
     if 'annotation' in intron_meta.columns:
         cluster_to_annotations = intron_meta.groupby('cluster')['annotation'].agg(lambda x: ','.join(sorted(set(x))))

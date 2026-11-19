@@ -232,7 +232,7 @@ def fit_multinomial_glm(x, y, beta_init = None, fitter = fit_with_lbfgs, guide_t
     losses = fitter(multinomial_model, guide, [x, y])
     return guide.beta
 
-def fit_dm_glm(x, y, beta_init, conc_max = 3000., concShape=1.0001, concRate=1e-4, multiconc = True, fitter = fit_with_lbfgs, guide_type = DamCleverGuide, eps = 1.0e-8): 
+def fit_dm_glm(x, y, beta_init, conc_max = 3000., concShape=1.0001, concRate=1e-4, multiconc = True, fitter = fit_with_lbfgs, guide_type = DamCleverGuide, eps = 1.0e-8, init_conc = None): 
     """
     Fits a Dirichlet Multinomial generalized linear model.
 
@@ -257,7 +257,8 @@ def fit_dm_glm(x, y, beta_init, conc_max = 3000., concShape=1.0001, concRate=1e-
     J = y.shape[1]
     
     model = LeafCutterModel(P, J, gamma_shape = concShape, gamma_rate = concRate, multiconc = multiconc, eps = eps)
-    guide = guide_type(beta_init, multiconc = multiconc, conc_max = conc_max)
+    guide = guide_type(beta_init, multiconc = multiconc, conc_max = conc_max,
+                       init_conc = init_conc)
     losses, exit_status = fitter(model, guide, [x, y])
 
     return LeafcutterFit(
@@ -349,10 +350,11 @@ def dirichlet_multinomial_anova(x_full, x_null, y, init = "brr", **kwargs):
     null_fit = fit_dm_glm( x_null, y, beta_init_null, **kwargs )
     t_null_fit = time.time() - t0
 
-    # fit full model, initialized at null model solution
+    # fit full model, initialized at null model solution. Also initializes the
+    # concentration to the fitted null's concentration
     beta_init_full = torch.cat( (null_fit.beta, torch.zeros((P_full - P_null, J), **torch_types)) )
     t0 = time.time()
-    full_fit = fit_dm_glm( x_full, y, beta_init_full, **kwargs )
+    full_fit = fit_dm_glm( x_full, y, beta_init_full, init_conc = null_fit.conc, **kwargs )
     t_full_fit_from_null = time.time() - t0
 
     # fit full model, initialized "smartly", and check if this gives a better fit
